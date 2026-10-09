@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Neon Slope Runner</title>
+    <title>Neon Slope Dash</title>
     <style>
         body {
             margin: 0;
@@ -28,7 +28,7 @@
             left: 50%;
             transform: translate(-50%, -50%);
             text-align: center;
-            background: rgba(0, 0, 0, 0.85);
+            background: rgba(0, 0, 0, 0.9);
             padding: 30px;
             border-radius: 15px;
             border: 2px solid #00ffff;
@@ -67,7 +67,7 @@
         <p>Red Blocks = Obstacles (Avoid)</p>
         <p>Yellow Cylinders = Collectible Coins</p>
         <p>Green Pads = Speed Boost | Blue Pads = Slow Down</p>
-        <button onclick="startGame()">Start Game</button>
+        <button id="startBtn">Start Game</button>
     </div>
 
     <script>
@@ -76,6 +76,7 @@
         let score = 0;
         let coinsCollected = 0;
         let isPlaying = false;
+        let animationFrameId = null;
         
         let obstacles = [];
         let coins = [];
@@ -93,12 +94,168 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
             document.body.appendChild(renderer.domElement);
 
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
             scene.add(ambientLight);
 
-            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            const dirLight = new THREE.DirectionalLight(0xffffff, 1);
             dirLight.position.set(0, 20, 10);
             scene.add(dirLight);
 
             const ballGeo = new THREE.SphereGeometry(0.8, 32, 32);
-            const ballMat = new THREE.MeshStandardMaterial({ color: 0x0
+            const ballMat = new THREE.MeshStandardMaterial({ color: 0x00ffff, roughness: 0.2, metalness: 0.5 });
+            ball = new THREE.Mesh(ballGeo, ballMat);
+            ball.position.set(0, 0.8, 0);
+            scene.add(ball);
+
+            createTrack();
+
+            document.addEventListener('keydown', onKeyDown);
+            window.addEventListener('resize', onWindowResize);
+            document.getElementById('startBtn').addEventListener('click', startGame);
+
+            camera.position.set(0, 4, 8);
+            camera.lookAt(ball.position);
+            renderer.render(scene, camera);
+        }
+
+        function createTrack() {
+            const trackGeo = new THREE.BoxGeometry(14, 1, 1000);
+            const trackMat = new THREE.MeshStandardMaterial({ color: 0x111122, roughness: 0.8 });
+            const track = new THREE.Mesh(trackGeo, trackMat);
+            track.position.set(0, -0.5, -450);
+            scene.add(track);
+
+            const grid = new THREE.GridHelper(14, 20, 0xff007f, 0x00ffff);
+            grid.position.set(0, 0.01, -450);
+            grid.scale.z = 50;
+            scene.add(grid);
+        }
+
+        function spawnElements() {
+            for (let z = -30; z > -800; z -= 15) {
+                let lane = (Math.random() - 0.5) * 10;
+
+                let rand = Math.random();
+                if (rand < 0.5) {
+                    let obsGeo = new THREE.BoxGeometry(2, 2, 2);
+                    let obsMat = new THREE.MeshStandardMaterial({ color: 0xff0033, emissive: 0xaa0000 });
+                    let obs = new THREE.Mesh(obsGeo, obsMat);
+                    obs.position.set(lane, 1, z);
+                    scene.add(obs);
+                    obstacles.push(obs);
+                } else if (rand < 0.8) {
+                    let coinGeo = new THREE.CylinderGeometry(0.6, 0.6, 0.2, 16);
+                    let coinMat = new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.8 });
+                    let coin = new THREE.Mesh(coinGeo, coinMat);
+                    coin.rotation.x = Math.PI / 2;
+                    coin.position.set(lane, 0.8, z);
+                    scene.add(coin);
+                    coins.push(coin);
+                } else {
+                    let isBoost = Math.random() > 0.5;
+                    let padGeo = new THREE.PlaneGeometry(3, 4);
+                    let padMat = new THREE.MeshBasicMaterial({ color: isBoost ? 0x00ff00 : 0x0088ff, side: THREE.DoubleSide });
+                    let pad = new THREE.Mesh(padGeo, padMat);
+                    pad.rotation.x = -Math.PI / 2;
+                    pad.position.set(lane, 0.02, z);
+                    pad.userData = { type: isBoost ? 'boost' : 'slow' };
+                    scene.add(pad);
+                    pads.push(pad);
+                }
+            }
+        }
+
+        function startGame() {
+            document.getElementById('instructions').style.display = 'none';
+            
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+            }
+
+            score = 0;
+            coinsCollected = 0;
+            speed = 0.6;
+            ball.position.set(0, 0.8, 0);
+            ballTargetX = 0;
+
+            document.getElementById('score').innerText = score;
+            document.getElementById('coins').innerText = coinsCollected;
+
+            obstacles.forEach(o => scene.remove(o));
+            coins.forEach(c => scene.remove(c));
+            pads.forEach(p => scene.remove(p));
+            obstacles = []; coins = []; pads = [];
+
+            spawnElements();
+            isPlaying = true;
+            animate();
+        }
+
+        function onKeyDown(e) {
+            if (!isPlaying) return;
+            if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") ballTargetX -= 1.8;
+            if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") ballTargetX += 1.8;
+            
+            ballTargetX = Math.max(-5.5, Math.min(5.5, ballTargetX));
+        }
+
+        function animate() {
+            if (!isPlaying) return;
+
+            animationFrameId = requestAnimationFrame(animate);
+
+            ball.position.z -= speed;
+            ball.position.x += (ballTargetX - ball.position.x) * 0.1;
+            ball.rotation.x -= speed * 0.5;
+
+            camera.position.z = ball.position.z + 7;
+            camera.position.x = ball.position.x * 0.5;
+            camera.lookAt(ball.position.x, ball.position.y + 0.5, ball.position.z - 5);
+
+            speed += 0.0002;
+            score = Math.floor(-ball.position.z);
+            document.getElementById('score').innerText = score;
+
+            for (let obs of obstacles) {
+                if (ball.position.distanceTo(obs.position) < 1.5) {
+                    gameOver();
+                    return;
+                }
+            }
+
+            for (let i = coins.length - 1; i >= 0; i--) {
+                coins[i].rotation.z += 0.05;
+                if (ball.position.distanceTo(coins[i].position) < 1.2) {
+                    scene.remove(coins[i]);
+                    coins.splice(i, 1);
+                    coinsCollected += 1;
+                    document.getElementById('coins').innerText = coinsCollected;
+                }
+            }
+
+            for (let pad of pads) {
+                if (ball.position.distanceTo(pad.position) < 1.5) {
+                    if (pad.userData.type === 'boost') speed += 0.05;
+                    if (pad.userData.type === 'slow') speed = Math.max(0.4, speed - 0.05);
+                }
+            }
+
+            if (Math.abs(ball.position.x) > 6.5) {
+                gameOver();
+                return;
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        function gameOver() {
+            isPlaying = false;
+            alert('Game Over!\nScore: ' + score + '\nCoins: ' + coinsCollected);
+            document.getElementById('instructions').style.display = 'block';
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
